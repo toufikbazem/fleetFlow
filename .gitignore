@@ -1,0 +1,31 @@
+node_modules/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+.env
+.env.local
+.env.*.local
+
+# never commit real credentials — .env.example is the tracked template
+!.env.example
+
+logs/
+*.log
+npm-debug.log*
+
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Prisma
+prisma/*.db
+prisma/*.db-journal
+
+# Playwright / Vitest artefacts
+test-results/
+playwright-report/
+.vitest/

@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "comment": "Solution file for the Node-side projects. apps/web is intentionally absent: it is not a composite project (Vite owns its build) and is typechecked by its own `npm -w @fleetflow/web run typecheck`.",
+  "references": [{ "path": "./packages/shared" }, { "path": "./apps/api" }]
+}
