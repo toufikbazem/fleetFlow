@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+
+  // Typechecks everything the build deliberately excludes: test files, the
+  // seed script and the tooling configs.
+  //
+  // The package tsconfigs exclude `*.test.ts` so that `dist/` ships only
+  // production code. The side effect was that tests were executed but never
+  // typechecked — a test asserting against a field that no longer exists would
+  // pass silently unless it also failed at runtime. This project closes that.
+  //
+  // noEmit: nothing here is built, only verified.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": [
+    "packages/*/src/**/*.test.ts",
+    "apps/api/src/**/*.test.ts",
+    "apps/api/src/types/**/*.d.ts",
+    "prisma/seed.ts",
+    "vitest.config.ts",
+    "vitest.integration.config.ts"
+  ]
+}
