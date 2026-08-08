@@ -1,0 +1,564 @@
+// FleetFlow — database schema v1 (FF-103).
+//
+// Two client decisions are load-bearing here and are expensive to reverse once
+// data exists, so they are enforced by the database rather than by convention:
+//
+//   Q5  One driver per vehicle. A partial unique index on assignments allows at
+//       most one row per vehicle with end_date IS NULL. Added in migration SQL —
+//       Prisma cannot express a partial index (see prisma/README.md).
+//
+//   Q6  Soft delete everywhere. Every business table carries deleted_at, and a
+//       Prisma client extension (FF-105) appends `deleted_at IS NULL` to reads
+//       so a repository cannot forget it.
+//
+// Enum values mirror packages/shared/src/enums.ts exactly; a test asserts the
+// two never drift.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum UserRole {
+  ADMIN
+  FLEET_MANAGER
+  MECHANIC
+  ACCOUNTANT
+  DRIVER
+}
+
+enum DriverStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VehicleStatus {
+  ACTIVE
+  UNDER_MAINTENANCE
+  ARCHIVED
+}
+
+enum MileageSource {
+  MANUAL
+  MAINTENANCE
+}
+
+enum MaintenanceStatus {
+  PLANNED
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+}
+
+enum MaintenanceKind {
+  SCHEDULED
+  UNEXPECTED
+}
+
+enum TriggerType {
+  DATE
+  MILEAGE
+  BOTH
+}
+
+enum DamageStatus {
+  REPORTED
+  UNDER_REVIEW
+  LINKED
+  RESOLVED
+  REJECTED
+}
+
+enum DamageSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AttachmentEntity {
+  DOCUMENT
+  MAINTENANCE_OP
+  DAMAGE
+}
+
+enum AttachmentKind {
+  SCAN
+  INVOICE
+  PHOTO
+}
+
+enum UploadState {
+  PENDING
+  READY
+}
+
+enum NotificationRule {
+  MAINTENANCE_UPCOMING
+  DOCUMENT_EXPIRING
+  INSPECTION_DUE
+  MAINTENANCE_OVERDUE
+}
+
+enum DeliveryChannel {
+  EMAIL
+}
+
+enum DeliveryStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+// ===========================================================================
+// Identity — USR, DRV, AUTH
+// ===========================================================================
+
+model User {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  role          UserRole
+  isActive      Boolean   @default(true) @map("is_active")
+  lastLoginAt   DateTime? @map("last_login_at")
+  /// USR-03: deactivation keeps every authored record attributed.
+  deactivatedAt DateTime? @map("deactivated_at")
+  deletedAt     DateTime? @map("deleted_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  driver              Driver?
+  passwordResets      PasswordReset[]
+  recordedMileage     MileageReading[]
+  closedAssignments   Assignment[]     @relation("AssignmentClosedBy")
+  assignedMaintenance MaintenanceOp[]  @relation("MaintenanceMechanic")
+  reportedDamages     Damage[]         @relation("DamageReporter")
+  uploadedAttachments Attachment[]
+  notifications       Notification[]
+  auditEntries        AuditLog[]
+
+  @@index([role])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model PasswordReset {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  /// The token is hashed at rest: a leaked database row must not be redeemable.
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  /// Set on redemption. A non-null value makes the token single-use (AUTH-02).
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("password_resets")
+}
+
+model Driver {
+  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// DRV-04: optional link to a login account with the Driver role.
+  userId          String?      @unique @map("user_id") @db.Uuid
+  firstName       String       @map("first_name")
+  lastName        String       @map("last_name")
+  licenceNo       String       @map("licence_no")
+  licenceCategory String?      @map("licence_category")
+  licenceExpiry   DateTime?    @map("licence_expiry") @db.Date
+  phone           String?
+  hiredAt         DateTime?    @map("hired_at") @db.Date
+  status          DriverStatus @default(ACTIVE)
+  deletedAt       DateTime?    @map("deleted_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @default(now()) @updatedAt @map("updated_at")
+
+  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  assignments Assignment[]
+  damages     Damage[]
+
+  @@index([status])
+  @@index([deletedAt])
+  @@map("drivers")
+}
+
+// ===========================================================================
+// Vehicles — VEH
+// ===========================================================================
+
+model VehicleType {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  vehicles         Vehicle[]
+  maintenancePlans MaintenancePlan[]
+
+  @@map("vehicle_types")
+}
+
+model Vehicle {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  plate          String        @unique
+  vin            String?       @unique
+  make           String
+  model          String
+  year           Int?
+  vehicleTypeId  String?       @map("vehicle_type_id") @db.Uuid
+  status         VehicleStatus @default(ACTIVE)
+  /// Denormalised from the latest mileage_readings row, for fast filtering.
+  /// mileage_readings remains the authoritative history (VEH-05).
+  currentMileage Int           @default(0) @map("current_mileage")
+  purchaseDate   DateTime?     @map("purchase_date") @db.Date
+  purchasePrice  Decimal?      @map("purchase_price") @db.Decimal(12, 2)
+  insuranceValue Decimal?      @map("insurance_value") @db.Decimal(12, 2)
+  notes          String?
+  /// VEH-06: archiving hides the vehicle from operational lists but keeps all
+  /// history and reporting. Distinct from deletion.
+  archivedAt     DateTime?     @map("archived_at")
+  deletedAt      DateTime?     @map("deleted_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @default(now()) @updatedAt @map("updated_at")
+
+  vehicleType      VehicleType?      @relation(fields: [vehicleTypeId], references: [id], onDelete: SetNull)
+  mileageReadings  MileageReading[]
+  assignments      Assignment[]
+  maintenancePlans MaintenancePlan[]
+  maintenanceOps   MaintenanceOp[]
+  documents        Document[]
+  damages          Damage[]
+
+  @@index([status])
+  @@index([vehicleTypeId])
+  @@index([deletedAt])
+  @@map("vehicles")
+}
+
+model MileageReading {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId    String        @map("vehicle_id") @db.Uuid
+  mileage      Int
+  recordedAt   DateTime      @default(now()) @map("recorded_at")
+  recordedById String?       @map("recorded_by") @db.Uuid
+  source       MileageSource @default(MANUAL)
+  note         String?
+
+  vehicle    Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  recordedBy User?   @relation(fields: [recordedById], references: [id], onDelete: SetNull)
+
+  /// Append-only: no deleted_at. A wrong reading is corrected by a new reading,
+  /// so the trigger history that generated a task stays reconstructable.
+  @@index([vehicleId, recordedAt])
+  @@map("mileage_readings")
+}
+
+model Assignment {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId  String    @map("vehicle_id") @db.Uuid
+  driverId   String    @map("driver_id") @db.Uuid
+  startDate  DateTime  @map("start_date") @db.Date
+  /// NULL means the assignment is open. Q5 permits exactly one open assignment
+  /// per vehicle, enforced by a partial unique index added in migration SQL.
+  endDate    DateTime? @map("end_date") @db.Date
+  endedById  String?   @map("ended_by") @db.Uuid
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  driver  Driver  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  endedBy User?   @relation("AssignmentClosedBy", fields: [endedById], references: [id], onDelete: SetNull)
+
+  /// History (DRV-03): reassignment closes a row rather than overwriting it, so
+  /// there is no soft delete here either.
+  @@index([vehicleId, startDate])
+  @@index([driverId, startDate])
+  @@map("assignments")
+}
+
+// ===========================================================================
+// Maintenance — MNT
+// ===========================================================================
+
+model MaintenancePlan {
+  id            String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  description   String?
+  /// MNT-04: a plan targets one specific vehicle OR a whole vehicle type.
+  /// Exactly one of these is set — enforced by a CHECK constraint.
+  vehicleId     String?     @map("vehicle_id") @db.Uuid
+  vehicleTypeId String?     @map("vehicle_type_id") @db.Uuid
+  triggerType   TriggerType @map("trigger_type")
+  intervalDays  Int?        @map("interval_days")
+  intervalKm    Int?        @map("interval_km")
+  /// How far ahead of the trigger a task is announced (NTF-01).
+  noticeDays    Int         @default(14) @map("notice_days")
+  noticeKm      Int         @default(500) @map("notice_km")
+  isActive      Boolean     @default(true) @map("is_active")
+  deletedAt     DateTime?   @map("deleted_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @default(now()) @updatedAt @map("updated_at")
+
+  vehicle     Vehicle?        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicleType VehicleType?    @relation(fields: [vehicleTypeId], references: [id], onDelete: Cascade)
+  operations  MaintenanceOp[]
+
+  @@index([vehicleId])
+  @@index([vehicleTypeId])
+  @@index([isActive])
+  @@map("maintenance_plans")
+}
+
+model MaintenanceOp {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId   String            @map("vehicle_id") @db.Uuid
+  planId      String?           @map("plan_id") @db.Uuid
+  /// DMG-02: set when this job was raised from a damage report. The reverse
+  /// relation gives the damage its linked operation, so the link has exactly
+  /// one source of truth rather than two columns that can disagree.
+  damageId    String?           @unique @map("damage_id") @db.Uuid
+  kind        MaintenanceKind   @default(SCHEDULED)
+  title       String
+  description String?
+  status      MaintenanceStatus @default(PLANNED)
+  dueDate     DateTime?         @map("due_date") @db.Date
+  dueMileage  Int?              @map("due_mileage")
+
+  startedAt        DateTime? @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+  completedMileage Int?      @map("completed_mileage")
+  mechanicId       String?   @map("mechanic_id") @db.Uuid
+
+  /// MNT-05. costTotal is written by the service layer and pinned to
+  /// parts + labour by a CHECK constraint, so exported figures can never
+  /// disagree with the dashboard (RPT-06 acceptance).
+  costParts  Decimal @default(0) @map("cost_parts") @db.Decimal(12, 2)
+  costLabour Decimal @default(0) @map("cost_labour") @db.Decimal(12, 2)
+  costTotal  Decimal @default(0) @map("cost_total") @db.Decimal(12, 2)
+  currency   String  @default("USD") @db.VarChar(3)
+  vendor     String?
+
+  deletedAt DateTime? @map("deleted_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  vehicle  Vehicle          @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  plan     MaintenancePlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  damage   Damage?          @relation(fields: [damageId], references: [id], onDelete: SetNull)
+  mechanic User?            @relation("MaintenanceMechanic", fields: [mechanicId], references: [id], onDelete: SetNull)
+
+  @@index([vehicleId, status])
+  @@index([status, dueDate])
+  @@index([mechanicId, status])
+  @@index([planId])
+  @@index([deletedAt])
+  @@map("maintenance_ops")
+}
+
+// ===========================================================================
+// Documents — DOC
+// ===========================================================================
+
+model DocumentType {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String   @unique
+  label             String
+  defaultNoticeDays Int      @default(30) @map("default_notice_days")
+  isActive          Boolean  @default(true) @map("is_active")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @default(now()) @updatedAt @map("updated_at")
+
+  documents Document[]
+
+  @@map("document_types")
+}
+
+model Document {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId      String    @map("vehicle_id") @db.Uuid
+  documentTypeId String    @map("document_type_id") @db.Uuid
+  referenceNo    String?   @map("reference_no")
+  issueDate      DateTime? @map("issue_date") @db.Date
+  expiryDate     DateTime  @map("expiry_date") @db.Date
+  /// Overrides the document type's default when set (DOC-03).
+  noticeDays     Int?      @map("notice_days")
+  notes          String?
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at")
+
+  vehicle      Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  documentType DocumentType @relation(fields: [documentTypeId], references: [id], onDelete: Restrict)
+
+  /// DOC-05 status (valid | expiring soon | expired) is DERIVED in SQL from
+  /// expiry_date and the effective notice period — never stored. A stored value
+  /// would be wrong the moment the clock passes midnight with no write.
+  @@index([vehicleId])
+  @@index([expiryDate])
+  @@index([documentTypeId])
+  @@index([deletedAt])
+  @@map("documents")
+}
+
+// ===========================================================================
+// Damages — DMG
+// ===========================================================================
+
+model Damage {
+  id               String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  vehicleId        String         @map("vehicle_id") @db.Uuid
+  reportedByUserId String         @map("reported_by") @db.Uuid
+  /// Denormalised from the reporter's driver record where one exists, so the
+  /// report keeps its authorship after a reassignment.
+  driverId         String?        @map("driver_id") @db.Uuid
+  description      String
+  severity         DamageSeverity @default(MEDIUM)
+  occurredAt       DateTime       @map("occurred_at")
+  location         String?
+  status           DamageStatus   @default(REPORTED)
+  archivedAt       DateTime?      @map("archived_at")
+  deletedAt        DateTime?      @map("deleted_at")
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @default(now()) @updatedAt @map("updated_at")
+
+  vehicle        Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  reportedBy     User           @relation("DamageReporter", fields: [reportedByUserId], references: [id], onDelete: Restrict)
+  driver         Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  maintenanceOp  MaintenanceOp?
+
+  @@index([vehicleId, status])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("damages")
+}
+
+// ===========================================================================
+// Attachments — DOC-02, MNT-03, DMG-04
+// ===========================================================================
+
+model Attachment {
+  id          String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Polymorphic by design: one upload pipeline serves documents, maintenance
+  /// invoices and damage photos. There is no FK, so entity_id is validated by
+  /// the service layer before the signed URL is issued.
+  entityType  AttachmentEntity @map("entity_type")
+  entityId    String           @map("entity_id") @db.Uuid
+  bucket      String
+  objectPath  String           @map("object_path")
+  fileName    String           @map("file_name")
+  mimeType    String           @map("mime_type")
+  sizeBytes   Int              @map("size_bytes")
+  kind        AttachmentKind   @default(SCAN)
+  /// PENDING until the API has verified the stored object's real size and
+  /// content type. Nothing outside the upload flow may read a PENDING row.
+  uploadState UploadState      @default(PENDING) @map("upload_state")
+  uploadedById String?         @map("uploaded_by") @db.Uuid
+  deletedAt   DateTime?        @map("deleted_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @default(now()) @updatedAt @map("updated_at")
+
+  uploadedBy User? @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([uploadState])
+  @@index([deletedAt])
+  @@map("attachments")
+}
+
+// ===========================================================================
+// Notifications — NTF
+// ===========================================================================
+
+model Notification {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  rule       NotificationRule
+  entityType String           @map("entity_type")
+  entityId   String           @map("entity_id") @db.Uuid
+  /// The calendar day the rule fired, in the configured timezone. Part of the
+  /// de-duplication key, which is why it is a DATE and not a timestamp.
+  fireDate   DateTime         @map("fire_date") @db.Date
+  title      String
+  body       String
+  linkUrl    String?          @map("link_url")
+  readAt     DateTime?        @map("read_at")
+  createdAt  DateTime         @default(now()) @map("created_at")
+
+  user       User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries NotificationDelivery[]
+
+  /// NTF-07 in one line: "one notification per rule, per entity, per day" is a
+  /// database constraint, not application logic. The job inserts with
+  /// ON CONFLICT DO NOTHING, so a retry, a crash recovery or a manual re-run
+  /// during UAT cannot double-send.
+  @@unique([userId, rule, entityType, entityId, fireDate], name: "notification_dedupe")
+  @@index([userId, readAt])
+  @@index([fireDate])
+  @@map("notifications")
+}
+
+model NotificationDelivery {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notificationId String          @map("notification_id") @db.Uuid
+  channel        DeliveryChannel @default(EMAIL)
+  status         DeliveryStatus  @default(QUEUED)
+  /// Nodemailer's messageId and the raw SMTP response, kept for deliverability
+  /// forensics — the PRD calls silent email failure a core-value risk.
+  smtpMessageId  String?         @map("smtp_message_id")
+  smtpResponse   String?         @map("smtp_response")
+  rejected       String[]        @default([])
+  error          String?
+  attempts       Int             @default(0)
+  lastAttemptAt  DateTime?       @map("last_attempt_at")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @default(now()) @updatedAt @map("updated_at")
+
+  notification Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+
+  @@index([notificationId])
+  @@index([status])
+  @@map("notification_deliveries")
+}
+
+// ===========================================================================
+// Platform
+// ===========================================================================
+
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  actorUserId String?  @map("actor_user_id") @db.Uuid
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String?  @map("entity_id") @db.Uuid
+  changes     Json?
+  ip          String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  actor User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
