@@ -1,0 +1,55 @@
+# Local development dependencies only.
+#
+# This file is NOT a deployment artefact — hosting and deployment are out of
+# scope for this project (see docs/IMPLEMENTATION_PLAN.md). It exists so that a
+# developer can run `npm run db:up` and have the two backing services the API
+# needs, with no manual installation.
+#
+# In a real environment DATABASE_URL points at Supabase Postgres and REDIS_URL
+# at whatever Redis that environment provides. Nothing in the code changes.
+
+name: fleetflow-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: fleetflow-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: fleetflow
+      POSTGRES_PASSWORD: fleetflow
+      POSTGRES_DB: fleetflow
+      # Deterministic collation so ORDER BY behaves the same here as in Supabase.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=en-US'
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # Migrations and the API wait on this; without it `npm run db:migrate`
+      # immediately after `db:up` races the server's first startup.
+      test: ['CMD-SHELL', 'pg_isready -U fleetflow -d fleetflow']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: fleetflow-redis-dev
+    restart: unless-stopped
+    # Append-only so a restart does not silently drop refresh tokens mid-session.
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:
