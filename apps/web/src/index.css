@@ -1,0 +1,398 @@
+@import 'tailwindcss';
+
+/* ===========================================================================
+ * FleetFlow design system — FF-1105.
+ *
+ * One source of truth for every colour, radius, shadow, type step and motion
+ * curve in the product. Components never name a literal: they name a token, so
+ * a change here is a change everywhere and nothing can drift out of the system.
+ *
+ * The identity is deliberate rather than generic. Fleet management is an
+ * engineering discipline — precise, industrial, checked daily — so the palette
+ * pairs a deep petrol-teal with cool neutrals, and the type is IBM Plex: a
+ * family drawn for technical work, with a companion mono used wherever a value
+ * must be read exactly (plates, VINs, odometers, money).
+ *
+ * Colours are HSL channel triples so Tailwind can compose an alpha with them —
+ * `bg-primary/10` works, which it would not with a hex literal.
+ * ======================================================================== */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* --- Type ------------------------------------------------------------- */
+  --font-sans:
+    'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+
+  /* A restrained scale. Eight steps carry the whole product; a ninth would be
+     a step nobody could tell apart from its neighbour. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.5rem;
+
+  /* --- Surfaces --------------------------------------------------------- */
+  --color-background: hsl(206 33% 97%);
+  --color-foreground: hsl(212 34% 13%);
+
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(212 34% 13%);
+
+  /* A second surface for anything nested inside a card: table headers, inline
+     panels, the inside of a well. */
+  --color-surface: hsl(208 30% 98%);
+  --color-surface-foreground: hsl(212 34% 13%);
+
+  --color-muted: hsl(208 28% 94%);
+  --color-muted-foreground: hsl(213 13% 44%);
+
+  /* --- Brand ------------------------------------------------------------ */
+  /* Deep petrol. Dark enough to carry white text well past AA on the solid
+     button, saturated enough to read as a brand rather than as "a blue". */
+  --color-primary: hsl(193 94% 25%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-primary-hover: hsl(193 94% 20%);
+  --color-primary-soft: hsl(193 62% 94%);
+
+  /* Used only where a second categorical colour is genuinely needed — a data
+     series, the brand hairline. Never for status. */
+  --color-accent: hsl(254 58% 54%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-accent-soft: hsl(254 70% 96%);
+
+  --color-secondary: hsl(208 28% 93%);
+  --color-secondary-foreground: hsl(212 30% 20%);
+
+  /* The sign-in panel, and nothing else. It needs a colour of its own because
+     `primary` is tuned to carry white text at button size in both themes — in
+     dark that lifts it to a bright cyan, and a full-height slab of bright cyan
+     is a lightbox, not a brand. This one stays deep petrol in both. */
+  --color-brand-panel: hsl(197 76% 14%);
+  --color-brand-panel-foreground: hsl(192 40% 96%);
+
+  /* --- Status ----------------------------------------------------------- */
+  /* Each status colour is dark enough to be used as text on a light surface,
+     which is what the badges and inline hints actually need. The `-foreground`
+     partner is for the rare solid fill. */
+  --color-success: hsl(158 80% 24%);
+  --color-success-foreground: hsl(0 0% 100%);
+  --color-success-soft: hsl(158 52% 94%);
+
+  --color-warning: hsl(30 94% 36%);
+  --color-warning-foreground: hsl(0 0% 100%);
+  --color-warning-soft: hsl(38 92% 93%);
+
+  --color-destructive: hsl(2 72% 44%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-destructive-soft: hsl(2 84% 96%);
+
+  --color-info: hsl(193 94% 25%);
+  --color-info-foreground: hsl(0 0% 100%);
+  --color-info-soft: hsl(193 62% 94%);
+
+  /* --- Lines and focus -------------------------------------------------- */
+  --color-border: hsl(210 22% 90%);
+  --color-border-strong: hsl(210 18% 82%);
+  --color-input: hsl(210 20% 87%);
+  --color-ring: hsl(193 90% 34%);
+  --color-overlay: hsl(212 42% 10% / 0.55);
+
+  /* --- Radius ----------------------------------------------------------- */
+  --radius-xs: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.875rem;
+  --radius-2xl: 1.125rem;
+
+  /* --- Elevation -------------------------------------------------------- */
+  /* Tinted with the ink hue rather than pure black: a grey shadow over a cool
+     canvas reads as dirt, a tinted one reads as depth. */
+  --shadow-xs: 0 1px 2px 0 hsl(212 30% 15% / 0.05);
+  --shadow-sm: 0 1px 2px -1px hsl(212 30% 15% / 0.08), 0 1px 3px 0 hsl(212 30% 15% / 0.06);
+  --shadow-md: 0 2px 4px -2px hsl(212 30% 15% / 0.08), 0 4px 12px -2px hsl(212 30% 15% / 0.08);
+  --shadow-lg: 0 8px 16px -6px hsl(212 30% 15% / 0.12), 0 16px 40px -12px hsl(212 30% 15% / 0.16);
+
+  /* --- Motion ----------------------------------------------------------- */
+  /* One curve, three short durations. Motion here explains where something came
+     from; it never performs. */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-fade-in: fade-in 140ms var(--ease-out-soft);
+  --animate-scale-in: scale-in 170ms var(--ease-out-soft);
+  --animate-slide-up: slide-up 220ms var(--ease-out-soft);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -48%) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+    }
+  }
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Dark theme.
+ *
+ * Only token values change; no component knows this block exists. The palette
+ * is rebalanced rather than inverted — the petrol lifts to a legible cyan and
+ * the status colours brighten, because a colour tuned to carry white text on a
+ * white card is unreadable as text on a dark one.
+ * ------------------------------------------------------------------------ */
+@layer base {
+  :root {
+    color-scheme: light;
+
+    /*
+     * The select chevron.
+     *
+     * A data URI cannot carry `currentColor`, so the arrow is drawn twice and
+     * swapped here — the one place that knows both themes. It lives as a
+     * variable rather than as a utility class on the control because
+     * `tailwind-merge` does not understand Tailwind v4's `bg-(image:…)` syntax
+     * and was dropping the position and size classes next to it, which put
+     * every chevron in the product in the top-left corner of its own field.
+     */
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23626F7F' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  }
+
+  .dark {
+    color-scheme: dark;
+
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%239BA7B5' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+
+    --color-background: hsl(214 32% 8%);
+    --color-foreground: hsl(208 30% 95%);
+
+    --color-card: hsl(214 28% 11%);
+    --color-card-foreground: hsl(208 30% 95%);
+
+    --color-surface: hsl(214 26% 14%);
+    --color-surface-foreground: hsl(208 30% 95%);
+
+    --color-muted: hsl(214 24% 17%);
+    --color-muted-foreground: hsl(212 15% 66%);
+
+    --color-primary: hsl(189 84% 52%);
+    --color-primary-foreground: hsl(214 40% 8%);
+    --color-primary-hover: hsl(189 84% 62%);
+    --color-primary-soft: hsl(193 60% 17%);
+
+    --color-accent: hsl(254 84% 74%);
+    --color-accent-foreground: hsl(214 40% 8%);
+    --color-accent-soft: hsl(254 40% 20%);
+
+    --color-secondary: hsl(214 24% 19%);
+    --color-secondary-foreground: hsl(208 30% 94%);
+
+    --color-brand-panel: hsl(200 58% 9%);
+    --color-brand-panel-foreground: hsl(192 32% 94%);
+
+    --color-success: hsl(158 62% 48%);
+    --color-success-foreground: hsl(214 40% 8%);
+    --color-success-soft: hsl(158 42% 16%);
+
+    --color-warning: hsl(38 92% 58%);
+    --color-warning-foreground: hsl(214 40% 8%);
+    --color-warning-soft: hsl(36 50% 17%);
+
+    --color-destructive: hsl(2 84% 66%);
+    --color-destructive-foreground: hsl(214 40% 8%);
+    --color-destructive-soft: hsl(2 46% 19%);
+
+    --color-info: hsl(189 84% 52%);
+    --color-info-foreground: hsl(214 40% 8%);
+    --color-info-soft: hsl(193 60% 17%);
+
+    --color-border: hsl(214 20% 21%);
+    --color-border-strong: hsl(214 18% 30%);
+    --color-input: hsl(214 20% 26%);
+    --color-ring: hsl(189 84% 52%);
+    --color-overlay: hsl(214 45% 4% / 0.7);
+
+    --shadow-xs: 0 1px 2px 0 hsl(0 0% 0% / 0.3);
+    --shadow-sm: 0 1px 2px -1px hsl(0 0% 0% / 0.4), 0 1px 3px 0 hsl(0 0% 0% / 0.3);
+    --shadow-md: 0 2px 4px -2px hsl(0 0% 0% / 0.4), 0 4px 12px -2px hsl(0 0% 0% / 0.4);
+    --shadow-lg: 0 8px 16px -6px hsl(0 0% 0% / 0.5), 0 16px 40px -12px hsl(0 0% 0% / 0.6);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Base
+ * ------------------------------------------------------------------------ */
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--text-base--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings carry the identity: tight tracking, high contrast, no shouting. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    letter-spacing: -0.018em;
+    text-wrap: balance;
+  }
+
+  /* A visible focus ring is not decoration: keyboard users cannot operate the
+     app without it. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Every number that sits in a column is lined and tabular, so digits stack. */
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklab, var(--color-primary) 22%, transparent);
+  }
+
+  /* The scrollbar is part of the surface, not a system artefact pasted on it. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border-strong) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border-strong);
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-muted-foreground);
+  }
+
+  /* Native controls should follow the theme rather than the OS. */
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* The browser's own date picker button is black-on-black in dark mode. */
+  .dark ::-webkit-calendar-picker-indicator {
+    filter: invert(1) opacity(0.65);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Utilities the system leans on often enough to name once.
+ * ------------------------------------------------------------------------ */
+
+/* The skeleton shimmer. One definition, so every loading state pulses in time. */
+@utility skeleton {
+  background-color: var(--color-muted);
+  background-image: linear-gradient(
+    90deg,
+    transparent 25%,
+    color-mix(in oklab, var(--color-muted-foreground) 14%, transparent) 37%,
+    transparent 63%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+  border-radius: var(--radius-sm);
+}
+
+/* The one decorative element in the product: a faint measured grid, used behind
+   the sign-in panel and nowhere else, so it stays a signature rather than noise. */
+@utility brand-grid {
+  background-image:
+    linear-gradient(hsl(0 0% 100% / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(0 0% 100% / 0.06) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+/* Numbers that must line up column to column — counters, money, odometers. */
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
